@@ -192,6 +192,20 @@
    <button class="btn-outline"   onclick="exportLogCSV()">Export Logs</button>
  </div>
 
+<!-- START: Phần thêm mới cho thanh trượt -->
+<h4 style="margin:14px 0 10px;">Ngưỡng Tự động Tưới (%)</h4>
+<div class="slider-container">
+  <div class="slider-item">
+    <label for="lowThreshSlider">Ngưỡng Thấp (<span id="lowThreshValue">10</span>%)</label>
+    <input type="range" id="lowThreshSlider" min="0" max="100" value="10">
+  </div>
+  <div class="slider-item">
+    <label for="highThreshSlider">Ngưỡng Cao (<span id="highThreshValue">50</span>%)</label>
+    <input type="range" id="highThreshSlider" min="0" max="100" value="50">
+  </div>
+</div>
+<!-- END: Phần thêm mới cho thanh trượt -->
+
  <h4 style="margin:14px 0 10px;">Recent Logs</h4>
  <div class="table-wrap">
    <table>
@@ -230,15 +244,17 @@
 const WIFI_USER = "admin";
 const WIFI_PASS = "admin@2025";
 
-function doLogin(){
+// Sửa hàm doLogin để nhận đối tượng sự kiện và ngăn form gửi đi
+function doLogin(e){
+  e.preventDefault(); // Ngăn trang tải lại
    const u = document.getElementById("ssid").value;
    const p = document.getElementById("password").value;
    if(u===WIFI_USER && p===WIFI_PASS){
- localStorage.setItem("logged","1");
- document.getElementById("loginScreen").style.display="none";
- document.getElementById("mainApp").style.display="block";
+      localStorage.setItem("logged","1");
+      document.getElementById("loginScreen").style.display="none";
+      document.getElementById("mainApp").style.display="block";
    }else{
- document.getElementById("login-msg").innerText="Sai SSID hoặc mật khẩu!";
+      document.getElementById("login-msg").innerText="Sai SSID hoặc mật khẩu!";
    }
 }
 function logout(){
@@ -247,8 +263,8 @@ function logout(){
 }
 window.onload = ()=>{
    if(localStorage.getItem("logged")==="1"){
- document.getElementById("loginScreen").style.display="none";
- document.getElementById("mainApp").style.display="block";
+      document.getElementById("loginScreen").style.display="none";
+      document.getElementById("mainApp").style.display="block";
    }
 };
 
@@ -269,17 +285,15 @@ const controlButtons = document.querySelectorAll('.actions button:not(.btn-outli
 const statusEl = document.getElementById("status");
 
 // Khai báo biến onlineTimer ở đây để nó có phạm vi toàn cục
-    let onlineTimer;  
+     let onlineTimer;  
 // Hàm để vô hiệu hóa/kích hoạt các nút và cập nhật trạng thái
 function toggleUI(online) {
    statusEl.innerText = online ? "Online" : "Offline";
    statusEl.className = "badge " + (online ? "online" : "offline");
    controlButtons.forEach(btn => {
- btn.disabled = !online;
+      btn.disabled = !online;
    });
 }
-
-
 
 // Lắng nghe sự thay đổi của trạng thái online/offline từ ESP
 db.ref("presence/" + device + "/online").on("value", snap => {
@@ -292,280 +306,287 @@ db.ref("presence/" + device + "/online").on("value", snap => {
    // Xóa timer cũ nếu có và thiết lập timer mới
    clearTimeout(onlineTimer);
    onlineTimer = setTimeout(() => {
- toggleUI(false);
+      toggleUI(false);
    }, Math.max(0, ONLINE_TIMEOUT - (Date.now() - lastHeartbeat)));
 });
 
 
 // Lắng nghe các thay đổi khác
 // === CẢI THIỆN LỖI ĐỒNG BỘ lastCmdId ===
-
 db.ref("status/" + device).on("value", snap => {
-
    const s = snap.val() || {};
-
    const pumpEl = document.getElementById("pump");
-
    const modeEl = document.getElementById("mode");
 
-
-
    pumpEl.innerText = s.pump === true ? "ON" : "OFF";
-
    modeEl.innerText = s.mode || "-";
 
-
-
    pumpEl.className = "badge " + (s.pump === true ? "on" : "off");
-
    modeEl.className = "badge " + ((s.mode || "").toLowerCase());
 
-
-
    // Đồng bộ lastCmdId mỗi khi có thay đổi trên Firebase
-
    if (s.lastCmdId != null) {
-
- lastCmdId = s.lastCmdId;
-
+      lastCmdId = s.lastCmdId;
    }
-
-});// Lắng nghe các thay đổi khác
-
-db.ref("sensors/" + device).on("value", snap => {
-
-   const d = snap.val() || {};
-
-   document.getElementById("temp").innerText = d.temperature ?? "-";
-
-   document.getElementById("hum").innerText = d.humidity ?? "-";
-
-   document.getElementById("soil").innerText = d.soil ?? "-";
-
 });
 
-
+// XÓA listener cũ cho /sensors/ vì giờ chúng ta sẽ đọc dữ liệu từ /logs/
+// db.ref("sensors/" + device).on("value", snap => { ... });
 
 db.ref("logs/" + device).limitToLast(20).on("value", snap => {
-
    const logs = snap.val() || {};
-
    const tbody = document.getElementById("logTable");
-
    tbody.innerHTML = "";
 
-
-
    const logArray = Object.keys(logs).map(k => ({ ts: k, ...logs[k] }));
-
    logArray.sort((a,b) => b.ts - a.ts);
 
-
-
-   logArray.forEach(log => {
-
- const date = new Date(log.ts * 1000);
-
- const dateStr = date.toLocaleString("vi-VN", { hour12: false });
-
- const row = document.createElement("tr");
-
- row.innerHTML = `
-   <td>${dateStr}</td>
-   <td>${log.temp ?? "-"}</td>
-   <td>${log.hum ?? "-"}</td>
-   <td>${log.soil ?? "-"}</td>
-   <td>${log.pump ?? "-"}</td>
-   <td>${log.mode ?? "-"}</td>
-   <td>${log.note ?? "-"}</td>
- `;
- tbody.appendChild(row);
-
-   });
-
-
-
-   if (logArray.length === 0) {
-
- tbody.innerHTML = "<tr><td colspan='7'>No logs</td></tr>";
-
+   // Lấy bản ghi log mới nhất để cập nhật bảng điều khiển chính
+   if (logArray.length > 0) {
+      const latestLog = logArray[0];
+      document.getElementById("temp").innerText = latestLog.temp ?? "-";
+      document.getElementById("hum").innerText = latestLog.hum ?? "-";
+      document.getElementById("soil").innerText = latestLog.soil ?? "-";
+   } else {
+      document.getElementById("temp").innerText = "-";
+      document.getElementById("hum").innerText = "-";
+      document.getElementById("soil").innerText = "-";
    }
 
+   logArray.forEach(log => {
+      const date = new Date(log.ts * 1000);
+      const dateStr = date.toLocaleString("vi-VN", { hour12: false });
+      const row = document.createElement("tr");
+      row.innerHTML = `
+         <td>${dateStr}</td>
+         <td>${log.temp ?? "-"}</td>
+         <td>${log.hum ?? "-"}</td>
+         <td>${log.soil ?? "-"}</td>
+         <td>${log.pump ?? "-"}</td>
+         <td>${log.mode ?? "-"}</td>
+         <td>${log.note ?? "-"}</td>
+      `;
+      tbody.appendChild(row);
+   });
+
+   if (logArray.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='7'>No logs</td></tr>";
+   }
 });
 function sendCmd(pumpState) {
-
-   // Tăng lastCmdId trước khi gửi lệnh
-
-   lastCmdId++;
-
-   db.ref("command/" + device).set({
-
- cmdId: lastCmdId,
-
- pump: pumpState,
-
- mode: "Manual"
-
-   }).catch(err => console.error("Firebase write error:", err));
-
+     // Tăng lastCmdId trước khi gửi lệnh
+     lastCmdId++;
+     db.ref("command/" + device).set({
+        cmdId: lastCmdId,
+        pump: pumpState,
+        mode: "Manual"
+     }).catch(err => console.error("Firebase write error:", err));
 }
 function setMode(modeState) {
-
-   // Tăng lastCmdId trước khi gửi lệnh
-
-   lastCmdId++;
-
-   db.ref("command/" + device).set({
-
- cmdId: lastCmdId,
-
- pump: "",
-
- mode: modeState
-
-   }).catch(err => console.error("Firebase write error:", err));
-
+     // Tăng lastCmdId trước khi gửi lệnh
+     lastCmdId++;
+     db.ref("command/" + device).set({
+        cmdId: lastCmdId,
+        pump: "",
+        mode: modeState
+     }).catch(err => console.error("Firebase write error:", err));
 }
 function exportLogCSV() {
-
-   const logsRef = db.ref("logs/" + device);
-
-   logsRef.once("value").then(snap => {
-
- const logs = snap.val() || {};
-
- let csv = "Time;Temp;Hum;Soil;Pump;Mode;Note\n";
-
- Object.keys(logs).sort().forEach(ts => {
-
-   const log = logs[ts];
-
-   const date = new Date(ts * 1000).toLocaleString("vi-VN",{hour12:false});
-
-   csv += `${date};${log.temp ?? "-"};${log.hum ?? "-"};${log.soil ?? "-"};${log.pump ?? "-"};${log.mode ?? "-"};${log.note ?? "-"}\n`;
-
- });
-
- const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-
- const link = document.createElement("a");
-
- link.href = URL.createObjectURL(blob);
-
- link.download = `ESP_logs_${device}.csv`;
-
- link.click();
-
-   }).catch(err => console.error(err));
+     const logsRef = db.ref("logs/" + device);
+     logsRef.once("value").then(snap => {
+        const logs = snap.val() || {};
+        let csv = "Time;Temp;Hum;Soil;Pump;Mode;Note\n";
+        Object.keys(logs).sort().forEach(ts => {
+           const log = logs[ts];
+           const date = new Date(ts * 1000).toLocaleString("vi-VN",{hour12:false});
+           csv += `${date};${log.temp ?? "-"};${log.hum ?? "-"};${log.soil ?? "-"};${log.pump ?? "-"};${log.mode ?? "-"};${log.note ?? "-"}\n`;
+        });
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `ESP_logs_${device}.csv`;
+        link.click();
+     }).catch(err => console.error(err));
 }
 
 // === Logic biểu đồ được tích hợp vào đây ===
 let myChart = null;
 
+// Thêm dòng này để đặt màu mặc định cho tất cả chữ trong biểu đồ
+Chart.defaults.color = '#eaf0ff';
+
 db.ref("logs/" + device).on("value", snap => {
-   const logs = snap.val() || {};
-   const logArray = Object.keys(logs).map(k => ({ ts: k, ...logs[k] }));
+     const logs = snap.val() || {};
+     const logArray = Object.keys(logs).map(k => ({ ts: k, ...logs[k] }));
 
-   // Tạo nhãn (mốc 30 phút)
-   const labels = Array.from({ length: 48 }, (_, i) => {
- const h = Math.floor(i / 2);
- const m = (i % 2) * 30;
- return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-   });
+     // Tạo nhãn (mốc 30 phút)
+     const labels = Array.from({ length: 48 }, (_, i) => {
+        const h = Math.floor(i / 2);
+        const m = (i % 2) * 30;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+     });
 
-   const tempData = new Array(labels.length).fill(null);
-   const humData = new Array(labels.length).fill(null);
-   const soilData = new Array(labels.length).fill(null);
+     const tempData = new Array(labels.length).fill(null);
+     const humData = new Array(labels.length).fill(null);
+     const soilData = new Array(labels.length).fill(null);
 
-   const now = new Date();
-   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime();
+     const now = new Date();
+     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime();
 
-   logArray.forEach(log => {
- const logTime = log.ts * 1000;
- if (logTime >= todayStart && logTime <= now.getTime()) {
-   const date = new Date(logTime);
-   let hour = date.getHours();
-   let minute = date.getMinutes();
-   let minuteRounded = Math.floor(minute / 30) * 30;
-   const labelIndex = (hour * 2) + (minuteRounded / 30);
+     logArray.forEach(log => {
+        const logTime = log.ts * 1000;
+        if (logTime >= todayStart && logTime <= now.getTime()) {
+           const date = new Date(logTime);
+           let hour = date.getHours();
+           let minute = date.getMinutes();
+           let minuteRounded = Math.floor(minute / 30) * 30;
+           const labelIndex = (hour * 2) + (minuteRounded / 30);
 
-   if (labelIndex < labels.length) {
-  // Ép tất cả giá trị về thang 0–100
-  let temp = log.temp ?? 0;
-  if (temp > 100) temp = 100;
-  if (temp < 0) temp = 0;
-  tempData[labelIndex] = temp;
+           if (labelIndex < labels.length) {
+              // Ép tất cả giá trị về thang 0–100
+              let temp = log.temp ?? 0;
+              if (temp > 100) temp = 100;
+              if (temp < 0) temp = 0;
+              tempData[labelIndex] = temp;
 
-  let hum = log.hum ?? 0;
-  hum = Math.max(0, Math.min(100, hum));
-  humData[labelIndex] = hum;
+              let hum = log.hum ?? 0;
+              hum = Math.max(0, Math.min(100, hum));
+              humData[labelIndex] = hum;
 
-  const soilValue = log.soil ?? 0;
-  soilData[labelIndex] = soilValue;
-   }
- }
-   });
+              const soilValue = log.soil ?? 0;
+              soilData[labelIndex] = soilValue;
+           }
+        }
+     });
 
-   if (myChart) {
- myChart.data.labels = labels;
- myChart.data.datasets[0].data = tempData;
- myChart.data.datasets[1].data = humData;
- myChart.data.datasets[2].data = soilData;
- myChart.update();
-   } else {
- const ctx = document.getElementById('dailyChart').getContext('2d');
- myChart = new Chart(ctx, {
-   type: 'line',
-   data: {
-  labels: labels,
-  datasets: [
-    {
-   label: 'Nhiệt độ (°C)',
-   data: tempData,
-   borderColor: 'rgb(255, 99, 132)',
-   backgroundColor: 'rgb(255, 99, 132)',
-   tension: 0.2
-    },
-    {
-   label: 'Độ ẩm không khí (%)',
-   data: humData,
-   borderColor: 'rgb(54, 162, 235)',
-   backgroundColor: 'rgb(54, 162, 235)',
-   tension: 0.2
-    },
-    {
-   label: 'Độ ẩm đất (%)',
-   data: soilData,
-   borderColor: 'rgb(75, 192, 192)',
-   backgroundColor: 'rgb(75, 192, 192)',
-   tension: 0.2
+     if (myChart) {
+        myChart.data.labels = labels;
+        myChart.data.datasets[0].data = tempData;
+        myChart.data.datasets[1].data = humData;
+        myChart.data.datasets[2].data = soilData;
+        myChart.update();
+     } else {
+        const ctx = document.getElementById('dailyChart').getContext('2d');
+        myChart = new Chart(ctx, {
+           type: 'line',
+           data: {
+              labels: labels,
+              datasets: [
+                 {
+                    label: 'Nhiệt độ (°C)',
+                    data: tempData,
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgb(255, 99, 132)',
+                    tension: 0.2
+                 },
+                 {
+                    label: 'Độ ẩm không khí (%)',
+                    data: humData,
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgb(54, 162, 235)',
+                    tension: 0.2
+                 },
+                 {
+                    label: 'Độ ẩm đất (%)',
+                    data: soilData,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgb(75, 192, 192)',
+                    tension: 0.2
+                 }
+              ]
+           },
+           options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                 legend: { 
+                    position: 'top',
+                    labels: {
+                       color: '#eaf0ff' // Đặt màu chữ cho chú thích
+                    }
+                 },
+                 tooltip: { mode: 'index', intersect: false }
+              },
+              interaction: { mode: 'nearest', axis: 'x', intersect: false },
+              scales: {
+                 x: {
+                    grid: {
+                       color: 'rgba(255,255,255,.08)'
+                    },
+                    title: { 
+                       display: true, 
+                       text: 'Thời gian trong ngày',
+                       color: '#eaf0ff' // Đặt màu chữ cho tiêu đề trục x
+                    },
+                    ticks: { 
+                       color: '#eaf0ff', // Đặt màu chữ cho các giá trị trên trục x
+                       autoSkip: true, 
+                       maxTicksLimit: 24 
+                    }
+                 },
+                 y: {
+                    grid: {
+                       color: 'rgba(255,255,255,.08)'
+                    },
+                    min: 0,
+                    max: 100,
+                    title: { 
+                       display: true, 
+                       text: 'Giá trị (%)',
+                       color: '#eaf0ff' // Đặt màu chữ cho tiêu đề trục y
+                    },
+                    ticks: { 
+                       color: '#eaf0ff' // Đặt màu chữ cho các giá trị trên trục y
+                    }
+                 }
+            }
+         }
+        });
+     }
+});
+
+// START: Phần thêm mới cho thanh trượt
+const lowThreshSlider = document.getElementById("lowThreshSlider");
+const highThreshSlider = document.getElementById("highThreshSlider");
+const lowThreshValue = document.getElementById("lowThreshValue");
+const highThreshValue = document.getElementById("highThreshValue");
+
+// Lắng nghe sự thay đổi của slider và cập nhật Firebase
+lowThreshSlider.addEventListener('input', (event) => {
+    // Kiểm tra và điều chỉnh giá trị ngay lập tức
+    const lowVal = parseInt(event.target.value);
+    const highVal = parseInt(highThreshSlider.value);
+    if (lowVal > highVal) {
+        event.target.value = highVal;
     }
-  ]
-   },
-   options: {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { position: 'top' },
-    tooltip: { mode: 'index', intersect: false }
-  },
-  interaction: { mode: 'nearest', axis: 'x', intersect: false },
-  scales: {
-    x: {
-   title: { display: true, text: 'Thời gian trong ngày', color: '#eaf0ff' },
-   ticks: { autoSkip: true, maxTicksLimit: 24, color: '#9aa3b2' }
-    },
-    y: {
-   min: 0,
-   max: 100,
-   title: { display: true, text: 'Giá trị (%)', color: '#eaf0ff' },
-   ticks: {color: '#9aa3b2' }
+    lowThreshValue.innerText = event.target.value;
+    db.ref("thresholds/" + device + "/low").set(parseInt(event.target.value)).catch(err => console.error(err));
+});
+
+highThreshSlider.addEventListener('input', (event) => {
+    // Kiểm tra và điều chỉnh giá trị ngay lập tức
+    const lowVal = parseInt(lowThreshSlider.value);
+    const highVal = parseInt(event.target.value);
+    if (highVal < lowVal) {
+        event.target.value = lowVal;
     }
-  }
+    highThreshValue.innerText = event.target.value;
+    db.ref("thresholds/" + device + "/high").set(parseInt(event.target.value)).catch(err => console.error(err));
+});
+
+// Lắng nghe thay đổi từ Firebase và cập nhật giao diện
+db.ref("thresholds/" + device).on("value", snap => {
+   const thresholds = snap.val() || {};
+   if (thresholds.low != null) {
+      lowThreshSlider.value = thresholds.low;
+      lowThreshValue.innerText = thresholds.low;
    }
- });
+   if (thresholds.high != null) {
+      highThreshSlider.value = thresholds.high;
+      highThreshValue.innerText = thresholds.high;
    }
 });
+// END: Phần thêm mới cho thanh trượt
 </script>
 </body>
 </html>
