@@ -164,7 +164,7 @@
    <h2>WiFi Login</h2>
    <input type="text" id="ssid" placeholder="SSID WiFi"><br>
    <input type="password" id="password" placeholder="Mật khẩu WiFi"><br>
-   <button class="btn-primary" onclick="doLogin()">Đăng nhập</button>
+   <button class="btn-primary" onclick="doLogin(event)">Đăng nhập</button>
    <p id="login-msg"></p>
  </div>
    </div>
@@ -590,3 +590,4 @@ db.ref("thresholds/" + device).on("value", snap => {
 </script>
 </body>
 </html>
+
